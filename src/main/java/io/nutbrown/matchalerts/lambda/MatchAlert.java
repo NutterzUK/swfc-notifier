@@ -1,4 +1,4 @@
-package com.nutbrown.matchalerts.lambda;
+package io.nutbrown.matchalerts.lambda;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -18,41 +18,54 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Created by steve on 28/04/2017.
+ * Created by Stephen Nutbrown for nutbrown.io on 28/04/2017.
  */
 public class MatchAlert implements RequestHandler<String, String> {
 
 	private static final String PHONE_NUMBER = "+441234567890";
 	private static final String TEAM_NAME = "Sheffield Wednesday";
-	
-    DefaultHttpClient httpClient = new DefaultHttpClient();
-    HttpGet getRequest = new HttpGet("http://api.football-data.org/v1/teams/345/fixtures");
+	private static final String TEAM_ID = "345";
 
+    /**
+     * Entry method for AWS lambda call.
+     * @param input Any input (probably none). Can use this in future iterations to send team ID/Name?
+     * @param context AWS lambda context.
+     * @return A string saying if the message was successfully sent or not.
+     */
     public String handleRequest(String input, Context context) {
-        String messageSent = "False";
+        String messageSent = "Message not sent";
+
+        DefaultHttpClient httpClient = new DefaultHttpClient();
+        HttpGet getRequest = new HttpGet("http://api.football-data.org/v1/teams/" + TEAM_ID + "/fixtures");
         try {
             HttpResponse response = httpClient.execute(getRequest);
-            if (response.getStatusLine().getStatusCode() != 200) {
-                throw new RuntimeException("Failed : HTTP error code : "
-                        + response.getStatusLine().getStatusCode());
-            }
+            String responseBody = EntityUtils.toString(response.getEntity());
+            String modifiedDate = getCurrentDateAsFormattedString();
 
-            String responseString = EntityUtils.toString(response.getEntity());
-            Date date = new Date();
-            String modifiedDate= new SimpleDateFormat("yyyy-MM-dd").format(date);
-
-            if(responseString.contains(modifiedDate)) {
+            if(responseBody.contains(modifiedDate)) {
                 sendSMSMessage();
-                messageSent = "True";
+                messageSent = "Message sent.";
             }
         } catch (IOException e) {
             e.printStackTrace();
+            messageSent = "IOException caused message to not be sent - check your lambda logs";
         }
         return messageSent;
     }
 
-    public static void sendSMSMessage() {
+    /**
+     * Method to get the current date in the format yyyy-MM-dd, the same as api.football-data.org.
+     * @return the date in the formay yyyy-MM-dd.
+     */
+    private static String getCurrentDateAsFormattedString() {
+        return new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+    }
 
+    /**
+     * Method sends a text message via AWS SNS. Requires the role to have permission to
+     * create SNS notifications.
+     */
+    private static void sendSMSMessage() {
         AmazonSNSClient snsClient = new AmazonSNSClient();
         String message = TEAM_NAME + " are playing today.";
         String phoneNumber = PHONE_NUMBER;
@@ -75,7 +88,6 @@ public class MatchAlert implements RequestHandler<String, String> {
                 .withMessage(message)
                 .withPhoneNumber(phoneNumber)
                 .withMessageAttributes(smsAttributes));
-        System.out.println("Message sent:" + result);
     }
 
 }
